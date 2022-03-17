@@ -13,6 +13,15 @@ from jukebox.utils.sample_utils import split_batch, get_starts
 from jukebox.utils.dist_utils import print_once
 import fire
 
+def get_logdir(hps, level):
+    if dist.get_world_size() > 1:
+        logdir = f"{hps.name}_rank_{dist.get_rank()}/level_{level}"
+    else:
+        logdir = f"{hps.name}/level_{level}"
+    if not os.path.exists(logdir):
+        os.makedirs(logdir)
+    return logdir
+
 # Sample a partial window of length<n_ctx with tokens_to_sample new tokens on level=level
 def sample_partial_window(zs, labels, sampling_kwargs, level, prior, tokens_to_sample, hps):
     z = zs[level]
@@ -29,6 +38,12 @@ def sample_partial_window(zs, labels, sampling_kwargs, level, prior, tokens_to_s
 
 # Sample a single window of length=n_ctx at position=start on level=level
 def sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps):
+    logdir = get_logdir(hps, level)
+    try:
+        zs = t.load(f"{logdir}/data.pth.tar")['zs']
+        print_once('progress loaded')
+    except Exception: pass
+    
     n_samples = hps.n_samples
     n_ctx = prior.n_ctx
     end = start + n_ctx
@@ -75,6 +90,8 @@ def sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps):
     # Update z with new sample
     z_new = z[:,-new_tokens:]
     zs[level] = t.cat([zs[level], z_new], dim=1)
+    t.save(dict(zs=zs, labels=None, sampling_kwargs=None, x=None), f"{logdir}/data.pth.tar")
+    print_once('progress saved')
     return zs
 
 # Sample total_length tokens at level=level with hop_length=hop_length
@@ -99,6 +116,7 @@ def _sample(zs, labels, sampling_kwargs, priors, sample_levels, hps):
         assert hps.sample_length % prior.raw_to_tokens == 0, f"Expected sample_length {hps.sample_length} to be multiple of {prior.raw_to_tokens}"
         total_length = hps.sample_length//prior.raw_to_tokens
         hop_length = int(hps.hop_fraction[level]*prior.n_ctx)
+
         zs = sample_level(zs, labels[level], sampling_kwargs[level], level, prior, total_length, hop_length, hps)
 
         prior.cpu()
@@ -107,12 +125,7 @@ def _sample(zs, labels, sampling_kwargs, priors, sample_levels, hps):
         # Decode sample
         x = prior.decode(zs[level:], start_level=level, bs_chunks=zs[level].shape[0])
 
-        if dist.get_world_size() > 1:
-            logdir = f"{hps.name}_rank_{dist.get_rank()}/level_{level}"
-        else:
-            logdir = f"{hps.name}/level_{level}"
-        if not os.path.exists(logdir):
-            os.makedirs(logdir)
+        logdir = get_logdir(hps, level)
         t.save(dict(zs=zs, labels=labels, sampling_kwargs=sampling_kwargs, x=x), f"{logdir}/data.pth.tar")
         save_wav(logdir, x, hps.sr)
         if alignments is None and priors[-1] is not None and priors[-1].n_tokens > 0 and not isinstance(priors[-1].labeller, EmptyLabeller):
