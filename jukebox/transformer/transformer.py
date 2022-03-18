@@ -139,7 +139,11 @@ class Transformer(nn.Module):
         self.checkpoint_res = checkpoint_res
         self._attn_mods = nn.ModuleList()
         for d in range(n_depth):
-            dev = device if t.cuda.mem_get_info(device)[0] > 500_000_000 else 'cpu'
+            tot = t.cuda.get_device_properties(device).total_memory
+            alloc = t.cuda.memory_allocated(device)
+            free = tot - alloc
+            #print(free)
+            dev = device if free > 1_000_000_000 else 'cpu'
             self._attn_mods.append(attn_block(d).to(dev))
         self.ws = []
 
