@@ -91,8 +91,12 @@ class Conv1D(nn.Module):
             w = t.empty(n_in, n_out)
             nn.init.normal_(w, std=0.02 * init_scale)
         b = t.zeros(n_out)
+
         self.w = nn.Parameter(w)
         self.b = nn.Parameter(b)
+
+        self.apply(_convert_conv_weights_to_fp16)
+
 
     def forward(self, x):
         size_out = (*x.size()[:-1], self.n_out)
