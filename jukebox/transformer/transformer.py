@@ -182,7 +182,7 @@ class Transformer(nn.Module):
         for i,l in enumerate(self._attn_mods):
             orig_device = l.device
             if orig_device != self.device:
-              l = l.to(self.device, non_blocking=False)
+              l = l.to(self.device, non_blocking=True)
             if self.checkpoint_res == 1 and not sample:
                 if l.attn_func == 6:
                     assert encoder_kv is not None
@@ -199,7 +199,7 @@ class Transformer(nn.Module):
             if l.attn.record_attn:
                 self.ws.append(l.attn.w)
             if orig_device != self.device:
-              l = l.to(orig_device, non_blocking=False)
+              l = l.to(orig_device, non_blocking=True)
         if not fp16_out:
             x = x.float()
         return x
