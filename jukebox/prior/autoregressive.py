@@ -62,7 +62,7 @@ class ConditionalAutoregressive2D(nn.Module):
         self.width = width
         self.depth = depth
 
-        self.x_emb = nn.Embedding(bins, width)
+        self.x_emb = nn.Embedding(bins, width).to(device)
         nn.init.normal_(self.x_emb.weight, std=0.02 * init_scale)
         self.x_emb_dropout = nn.Dropout(emb_dropout)
         self.y_cond = y_cond
@@ -70,7 +70,7 @@ class ConditionalAutoregressive2D(nn.Module):
         if not y_cond:
             self.start_token = nn.Parameter(get_normal(1, width, std=0.01 * init_scale))
 
-        self.pos_emb = PositionEmbedding(input_shape=input_shape, width=width, init_scale=init_scale, pos_init=pos_init)
+        self.pos_emb = PositionEmbedding(input_shape=input_shape, width=width, init_scale=init_scale, pos_init=pos_init).to(device)
         self.pos_emb_dropout = nn.Dropout(emb_dropout)
 
         self.transformer = Transformer(n_in=width, n_ctx=input_dims, n_head=heads, n_depth=depth,
@@ -93,7 +93,7 @@ class ConditionalAutoregressive2D(nn.Module):
             self.share_x_emb_x_out = True
 
         if not only_encode:
-            self.x_out = nn.Linear(width, bins, bias=False)
+            self.x_out = nn.Linear(width, bins, bias=False).to(device)
             if self.share_x_emb_x_out:
                 self.x_out.weight = self.x_emb.weight
             self.loss = t.nn.CrossEntropyLoss()

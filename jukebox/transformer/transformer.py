@@ -104,6 +104,7 @@ class Transformer(nn.Module):
             self.block_ctx = n_ctx // blocks
         self.prime_len = prime_len
         self.n_head = n_head
+        self.device = device
 
         res_scale = 1.0 / n_depth if res_scale else 1.0
 
@@ -143,8 +144,10 @@ class Transformer(nn.Module):
             alloc = t.cuda.memory_allocated(device)
             free = tot - alloc
             #print(free)
-            dev = device if free > 1_000_000_000 else 'cpu'
-            self._attn_mods.append(attn_block(d).to(dev))
+            dev = device if free > 2_000_000_000 else 'cpu'
+            attn_b = attn_block(d).to(dev)
+            attn_b.device = dev
+            self._attn_mods.append(attn_b)
         self.ws = []
 
 
@@ -177,6 +180,9 @@ class Transformer(nn.Module):
 
         # Blocks
         for i,l in enumerate(self._attn_mods):
+            orig_device = l.device
+            if orig_device != self.device:
+              l = l.to(self.device, non_blocking=False)
             if self.checkpoint_res == 1 and not sample:
                 if l.attn_func == 6:
                     assert encoder_kv is not None
@@ -192,6 +198,8 @@ class Transformer(nn.Module):
                     x = l(x, encoder_kv=None, sample=sample)
             if l.attn.record_attn:
                 self.ws.append(l.attn.w)
+            if orig_device != self.device:
+              l = l.to(orig_device, non_blocking=False)
         if not fp16_out:
             x = x.float()
         return x

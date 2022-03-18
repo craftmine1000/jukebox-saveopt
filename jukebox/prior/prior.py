@@ -70,12 +70,12 @@ class SimplePrior(nn.Module):
                                                           stride_t=strides_t[_level],
                                                           **x_cond_kwargs)
             if dist.get_rank() == 0: print(f"Conditioning on 1 above level(s)")
-            self.conditioner_blocks.append(conditioner_block(self.cond_level))
+            self.conditioner_blocks.append(conditioner_block(self.cond_level).to(device))
 
         # Y conditioning
         if self.y_cond:
             self.n_time = self.z_shape[0] # Assuming STFT=TF order and raw=T1 order, so T is first dim
-            self.y_emb = LabelConditioner(n_time=self.n_time,include_time_signal=not self.x_cond,**y_cond_kwargs)
+            self.y_emb = LabelConditioner(n_time=self.n_time,include_time_signal=not self.x_cond,**y_cond_kwargs).to(device)
 
         # Lyric conditioning
         if single_enc_dec:
@@ -110,10 +110,10 @@ class SimplePrior(nn.Module):
                 self.prime_prior = ConditionalAutoregressive2D(input_shape=prime_input_shape, x_cond=False, y_cond=False,
                                                                only_encode=True, device=device,
                                                                **prime_kwargs)
-                self.prime_state_proj = Conv1D(self.prime_acts_width, self.prime_state_width, init_scale=prime_kwargs['init_scale'])
-                self.prime_state_ln = LayerNorm(self.prime_state_width)
+                self.prime_state_proj = Conv1D(self.prime_acts_width, self.prime_state_width, init_scale=prime_kwargs['init_scale']).to(device)
+                self.prime_state_ln = LayerNorm(self.prime_state_width).to(device)
                 self.prime_bins = prime_kwargs['bins']
-                self.prime_x_out = nn.Linear(self.prime_state_width, self.prime_bins, bias=False)
+                self.prime_x_out = nn.Linear(self.prime_state_width, self.prime_bins, bias=False).to(device)
                 nn.init.normal_(self.prime_x_out.weight, std=0.02 * prior_kwargs['init_scale'])
             else:
                 self.prime_loss_dims = 0
