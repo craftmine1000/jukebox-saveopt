@@ -166,7 +166,8 @@ def make_prior(hps, vqvae, device='cuda'):
                         copy_input=hps.copy_input,
                         labels_v3=hps.labels_v3,
                         merged_decoder=hps.merged_decoder,
-                        single_enc_dec=hps.single_enc_dec)
+                        single_enc_dec=hps.single_enc_dec,
+                        device=device)
 
     prior.alignment_head = hps.get('alignment_head', None)
     prior.alignment_layer = hps.get('alignment_layer', None)

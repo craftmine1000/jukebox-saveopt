@@ -53,7 +53,7 @@ class ConditionalAutoregressive2D(nn.Module):
                  m_attn=0.25, m_mlp=1,
                  checkpoint_res=0, checkpoint_attn=0, checkpoint_mlp=0,
                  attn_order=0, blocks=None, spread=None, x_cond=False, y_cond=False,
-                 encoder_dims=0, only_encode=False, merged_decoder=False, prime_len=None):
+                 encoder_dims=0, only_encode=False, merged_decoder=False, prime_len=None, device='cuda'):
         super().__init__()
         self.input_shape = input_shape
         self.input_dims = input_dims = np.prod(input_shape)
@@ -73,6 +73,7 @@ class ConditionalAutoregressive2D(nn.Module):
         self.pos_emb = PositionEmbedding(input_shape=input_shape, width=width, init_scale=init_scale, pos_init=pos_init)
         self.pos_emb_dropout = nn.Dropout(emb_dropout)
 
+        device = device if t.cuda.mem_get_info(device)[0] > 5_000_000 else 'cpu'
         self.transformer = Transformer(n_in=width, n_ctx=input_dims, n_head=heads, n_depth=depth,
                                        attn_dropout=attn_dropout, resid_dropout=resid_dropout,
                                        afn='quick_gelu', scale=True, mask=mask,
@@ -80,7 +81,7 @@ class ConditionalAutoregressive2D(nn.Module):
                                        m_attn=m_attn, m_mlp=m_mlp,
                                        checkpoint_attn=checkpoint_attn, checkpoint_mlp=checkpoint_mlp, checkpoint_res=checkpoint_res,
                                        attn_order=attn_order, blocks=blocks, spread=spread,
-                                       encoder_dims=encoder_dims, prime_len=prime_len)
+                                       encoder_dims=encoder_dims, prime_len=prime_len).to(device)
 
         self.only_encode = only_encode
         self.prime_len = prime_len
