@@ -93,7 +93,7 @@ class Transformer(nn.Module):
                  m_attn=0.25, m_mlp=1.,
                  checkpoint_attn=0, checkpoint_mlp=0, checkpoint_res=0,
                  attn_order=0, blocks=None, spread=None,
-                 encoder_dims=None, prime_len=None):
+                 encoder_dims=None, prime_len=None, device='cuda'):
         super().__init__()
         self.n_in = n_in
         self.n_ctx = n_ctx
@@ -139,7 +139,8 @@ class Transformer(nn.Module):
         self.checkpoint_res = checkpoint_res
         self._attn_mods = nn.ModuleList()
         for d in range(n_depth):
-            self._attn_mods.append(attn_block(d))
+            dev = device if t.cuda.mem_get_info(device)[0] > 500_000_000 else 'cpu'
+            self._attn_mods.append(attn_block(d).to(dev))
         self.ws = []
 
 

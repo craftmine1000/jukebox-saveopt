@@ -73,7 +73,6 @@ class ConditionalAutoregressive2D(nn.Module):
         self.pos_emb = PositionEmbedding(input_shape=input_shape, width=width, init_scale=init_scale, pos_init=pos_init)
         self.pos_emb_dropout = nn.Dropout(emb_dropout)
 
-        device = device if t.cuda.mem_get_info(device)[0] > 5_000_000 else 'cpu'
         self.transformer = Transformer(n_in=width, n_ctx=input_dims, n_head=heads, n_depth=depth,
                                        attn_dropout=attn_dropout, resid_dropout=resid_dropout,
                                        afn='quick_gelu', scale=True, mask=mask,
@@ -81,7 +80,7 @@ class ConditionalAutoregressive2D(nn.Module):
                                        m_attn=m_attn, m_mlp=m_mlp,
                                        checkpoint_attn=checkpoint_attn, checkpoint_mlp=checkpoint_mlp, checkpoint_res=checkpoint_res,
                                        attn_order=attn_order, blocks=blocks, spread=spread,
-                                       encoder_dims=encoder_dims, prime_len=prime_len).to(device)
+                                       encoder_dims=encoder_dims, prime_len=prime_len, device=device)
 
         self.only_encode = only_encode
         self.prime_len = prime_len
