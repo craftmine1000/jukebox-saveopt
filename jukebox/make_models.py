@@ -26,7 +26,7 @@ memory_map_idx = 0
 def memory_map(storage, location):
     global memory_map_idx
     memory_map_idx += 1
-    print(storage.size(), storage.element_size())
+    #print(storage.size(), storage.element_size())
     s = 'disk_tensors/' + str(memory_map_idx) + '.bint'
     f = open(s,"wb")
     f.seek(storage.size()*storage.element_size()-1)
@@ -35,9 +35,6 @@ def memory_map(storage, location):
     new_storage = storage.__class__.from_file(s, shared=1, size=storage.size())
     del storage
     return new_storage
-    #storage._new_using_filename()
-    #return storage
-    #return storage.__class__._new_shared_filename(storage, storage.size)
 
 def load_checkpoint(path):
     restore = path
