@@ -114,7 +114,7 @@ class VQVAE(nn.Module):
 
     def decode(self, zs, start_level=0, end_level=None, bs_chunks=1):
         if bs_chunks == 1:
-            bs_chunks = zs[-1].shape[1] // 1024 + 1
+            bs_chunks = (zs[-1].shape[1] - 1) // 1024 + 1
             print(f'changed bs_chunks from 1 to {bs_chunks} to prevent vram explosion')
         z_chunks = [t.chunk(z, bs_chunks, dim=1) for z in zs]
         x_outs = []
@@ -140,7 +140,7 @@ class VQVAE(nn.Module):
     def encode(self, x, start_level=0, end_level=None, bs_chunks=1):
         print(x.shape)
         if bs_chunks == 1:
-            bs_chunks = x.shape[1] // (1024*128) + 1
+            bs_chunks = (x.shape[1] - 1) // (1024*128) + 1
             print(f'changed bs_chunks from 1 to {bs_chunks} to prevent vram explosion')
         x_chunks = t.chunk(x, bs_chunks, dim=1)
         zs_list = []
