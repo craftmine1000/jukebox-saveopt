@@ -60,7 +60,7 @@ def sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps):
     n_samples = hps.n_samples
     n_ctx = prior.n_ctx
     end = start + n_ctx
-    zs = zs.to('cpu') # force tokens back onto ram if the notebook did an oopsie
+    zs = [z.to('cpu') for z in zs] # force tokens back onto ram if the notebook did an oopsie
     # get z already sampled at current level
     z = zs[level][:,start:end].to('cuda')
 
