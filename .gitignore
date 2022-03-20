@@ -131,3 +131,12 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# big excludes
+models/1b_lyrics/prior_level_2.pth.tar
+models/5b/prior_level_0.pth.tar
+models/5b/prior_level_1.pth.tar
+models/5b/vqvae.pth.tar
+models/5b_lyrics/prior_level_2.pth.tar
+disk_tensors/*
+samples/*

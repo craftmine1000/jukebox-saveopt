@@ -93,7 +93,7 @@ class Transformer(nn.Module):
                  m_attn=0.25, m_mlp=1.,
                  checkpoint_attn=0, checkpoint_mlp=0, checkpoint_res=0,
                  attn_order=0, blocks=None, spread=None,
-                 encoder_dims=None, prime_len=None):
+                 encoder_dims=None, prime_len=None, device='cuda'):
         super().__init__()
         self.n_in = n_in
         self.n_ctx = n_ctx
@@ -104,6 +104,7 @@ class Transformer(nn.Module):
             self.block_ctx = n_ctx // blocks
         self.prime_len = prime_len
         self.n_head = n_head
+        self.device = device
 
         res_scale = 1.0 / n_depth if res_scale else 1.0
 
@@ -139,9 +140,30 @@ class Transformer(nn.Module):
         self.checkpoint_res = checkpoint_res
         self._attn_mods = nn.ModuleList()
         for d in range(n_depth):
-            self._attn_mods.append(attn_block(d))
+            if device != 'cpu':
+                tot = t.cuda.get_device_properties(device).total_memory
+                alloc = t.cuda.memory_allocated(device)
+                free = tot - alloc
+                dev = device if free > 2_500_000_000 else 'cpu'
+            else:
+                dev = device
+            attn_b = attn_block(d).to(dev)
+            attn_b._dev = dev
+            self._attn_mods.append(attn_b)
         self.ws = []
 
+    def c_to(self, device):
+        self.device = device
+        for d in range(len(self._attn_mods)):
+            if device != 'cpu':
+                tot = t.cuda.get_device_properties(device).total_memory
+                alloc = t.cuda.memory_allocated(device)
+                free = tot - alloc
+                dev = device if free > 2_500_000_000 else 'cpu'
+            else:
+                dev = device
+            attn_b = self._attn_mods[d].to(dev)
+            attn_b._dev = dev
 
     def set_record_attn(self, record_attn):
         """
@@ -172,6 +194,9 @@ class Transformer(nn.Module):
 
         # Blocks
         for i,l in enumerate(self._attn_mods):
+            orig_device = l._dev
+            if orig_device != self.device:
+              l = l.to(self.device, non_blocking=True)
             if self.checkpoint_res == 1 and not sample:
                 if l.attn_func == 6:
                     assert encoder_kv is not None
@@ -187,6 +212,8 @@ class Transformer(nn.Module):
                     x = l(x, encoder_kv=None, sample=sample)
             if l.attn.record_attn:
                 self.ws.append(l.attn.w)
+            if orig_device != self.device:
+              l = l.to(orig_device, non_blocking=True)
         if not fp16_out:
             x = x.float()
         return x

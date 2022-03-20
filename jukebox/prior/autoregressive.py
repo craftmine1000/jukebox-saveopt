@@ -46,6 +46,12 @@ class PositionEmbedding(nn.Module):
         return pos_emb
 
 class ConditionalAutoregressive2D(nn.Module):
+    def c_to(self, device):
+        for child in self.children():
+            if hasattr(child, 'c_to'):
+                child.c_to(device)
+            else:
+                child.to(device)
     def __init__(self, input_shape, bins,
                  width=128, depth=2, heads=1,
                  attn_dropout=0.0, resid_dropout=0.0, emb_dropout=0.0, mask=True,
@@ -53,7 +59,7 @@ class ConditionalAutoregressive2D(nn.Module):
                  m_attn=0.25, m_mlp=1,
                  checkpoint_res=0, checkpoint_attn=0, checkpoint_mlp=0,
                  attn_order=0, blocks=None, spread=None, x_cond=False, y_cond=False,
-                 encoder_dims=0, only_encode=False, merged_decoder=False, prime_len=None):
+                 encoder_dims=0, only_encode=False, merged_decoder=False, prime_len=None, device='cuda'):
         super().__init__()
         self.input_shape = input_shape
         self.input_dims = input_dims = np.prod(input_shape)
@@ -80,7 +86,7 @@ class ConditionalAutoregressive2D(nn.Module):
                                        m_attn=m_attn, m_mlp=m_mlp,
                                        checkpoint_attn=checkpoint_attn, checkpoint_mlp=checkpoint_mlp, checkpoint_res=checkpoint_res,
                                        attn_order=attn_order, blocks=blocks, spread=spread,
-                                       encoder_dims=encoder_dims, prime_len=prime_len)
+                                       encoder_dims=encoder_dims, prime_len=prime_len, device=device)
 
         self.only_encode = only_encode
         self.prime_len = prime_len
