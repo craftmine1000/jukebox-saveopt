@@ -100,14 +100,14 @@ def sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps):
     z_samples = []
     for z_i, z_conds_i, y_i in zip(z_list, z_conds_list, y_list):
         z_samples_i = prior.sample(n_samples=z_i.shape[0], z=z_i, z_conds=z_conds_i, y=y_i, **sampling_kwargs)
-        z_samples.append(z_samples_i)
+        z_samples.append(z_samples_i.to('cpu'))
     z = t.cat(z_samples, dim=0)
 
     sampling_kwargs['max_batch_size'] = max_batch_size
 
     # Update z with new sample
     z_new = z[:,-new_tokens:]
-    zs[level] = t.cat([zs[level], z_new.to('cpu')], dim=1)
+    zs[level] = t.cat([zs[level], z_new], dim=1)
     t.save(dict(zs=zs, labels=None, sampling_kwargs=None, x=None), f"{logdir}/data.pth.tar")
     print_once('progress saved')
     return zs
