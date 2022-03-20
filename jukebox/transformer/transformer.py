@@ -140,16 +140,30 @@ class Transformer(nn.Module):
         self.checkpoint_res = checkpoint_res
         self._attn_mods = nn.ModuleList()
         for d in range(n_depth):
-            tot = t.cuda.get_device_properties(device).total_memory
-            alloc = t.cuda.memory_allocated(device)
-            free = tot - alloc
-            #print(free)
-            dev = device if free > 2_000_000_000 else 'cpu'
+            if device != 'cpu':
+                tot = t.cuda.get_device_properties(device).total_memory
+                alloc = t.cuda.memory_allocated(device)
+                free = tot - alloc
+                dev = device if free > 2_250_000_000 else 'cpu'
+            else:
+                dev = device
             attn_b = attn_block(d).to(dev)
-            attn_b.device = dev
+            attn_b._dev = dev
             self._attn_mods.append(attn_b)
         self.ws = []
 
+    def c_to(self, device):
+        self.device = device
+        for d in range(len(self._attn_mods)):
+            if device != 'cpu':
+                tot = t.cuda.get_device_properties(device).total_memory
+                alloc = t.cuda.memory_allocated(device)
+                free = tot - alloc
+                dev = device if free > 2_250_000_000 else 'cpu'
+            else:
+                dev = device
+            attn_b = self._attn_mods[d].to(dev)
+            attn_b._dev = dev
 
     def set_record_attn(self, record_attn):
         """
@@ -180,7 +194,7 @@ class Transformer(nn.Module):
 
         # Blocks
         for i,l in enumerate(self._attn_mods):
-            orig_device = l.device
+            orig_device = l._dev
             if orig_device != self.device:
               l = l.to(self.device, non_blocking=True)
             if self.checkpoint_res == 1 and not sample:

@@ -25,6 +25,12 @@ and VQ vocab into a single large vocab, and the lyric tokens and VQ tokens into 
 we autoregressively model together.
 """
 class SimplePrior(nn.Module):
+    def c_to(self, device):
+        for child in self.children():
+            if hasattr(child, 'c_to'):
+                child.c_to(device)
+            else:
+                child.to(device)
     def __init__(self, z_shapes, l_bins, encoder, decoder, level,
                  downs_t, strides_t, labels, prior_kwargs, x_cond_kwargs, y_cond_kwargs,
                  prime_kwargs, copy_input, labels_v3=False,
@@ -70,12 +76,12 @@ class SimplePrior(nn.Module):
                                                           stride_t=strides_t[_level],
                                                           **x_cond_kwargs)
             if dist.get_rank() == 0: print(f"Conditioning on 1 above level(s)")
-            self.conditioner_blocks.append(conditioner_block(self.cond_level).to(device))
+            self.conditioner_blocks.append(conditioner_block(self.cond_level))
 
         # Y conditioning
         if self.y_cond:
             self.n_time = self.z_shape[0] # Assuming STFT=TF order and raw=T1 order, so T is first dim
-            self.y_emb = LabelConditioner(n_time=self.n_time,include_time_signal=not self.x_cond,**y_cond_kwargs).to(device)
+            self.y_emb = LabelConditioner(n_time=self.n_time,include_time_signal=not self.x_cond,**y_cond_kwargs)
 
         # Lyric conditioning
         if single_enc_dec:
@@ -110,10 +116,10 @@ class SimplePrior(nn.Module):
                 self.prime_prior = ConditionalAutoregressive2D(input_shape=prime_input_shape, x_cond=False, y_cond=False,
                                                                only_encode=True, device=device,
                                                                **prime_kwargs)
-                self.prime_state_proj = Conv1D(self.prime_acts_width, self.prime_state_width, init_scale=prime_kwargs['init_scale']).to(device)
-                self.prime_state_ln = LayerNorm(self.prime_state_width).to(device)
+                self.prime_state_proj = Conv1D(self.prime_acts_width, self.prime_state_width, init_scale=prime_kwargs['init_scale'])
+                self.prime_state_ln = LayerNorm(self.prime_state_width)
                 self.prime_bins = prime_kwargs['bins']
-                self.prime_x_out = nn.Linear(self.prime_state_width, self.prime_bins, bias=False).to(device)
+                self.prime_x_out = nn.Linear(self.prime_state_width, self.prime_bins, bias=False)
                 nn.init.normal_(self.prime_x_out.weight, std=0.02 * prior_kwargs['init_scale'])
             else:
                 self.prime_loss_dims = 0
@@ -135,7 +141,6 @@ class SimplePrior(nn.Module):
             self.labeller = EmptyLabeller()
 
         print(f"Level:{level}, Cond downsample:{self.cond_downsample}, Raw to tokens:{self.raw_to_tokens}, Sample length:{self.sample_length}")
-
 
     def get_y(self, labels, start, get_indices=False):
         if isinstance(self.labeller, EmptyLabeller):

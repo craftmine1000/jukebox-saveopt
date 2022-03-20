@@ -113,13 +113,16 @@ class VQVAE(nn.Module):
         return x_out
 
     def decode(self, zs, start_level=0, end_level=None, bs_chunks=1):
-        z_chunks = [t.chunk(z, bs_chunks, dim=0) for z in zs]
+        if bs_chunks == 1:
+            bs_chunks = zs[-1].shape[1] // 1024 + 1
+            print(f'changed bs_chunks from 1 to {bs_chunks} to prevent vram explosion')
+        z_chunks = [t.chunk(z, bs_chunks, dim=1) for z in zs]
         x_outs = []
         for i in range(bs_chunks):
-            zs_i = [z_chunk[i] for z_chunk in z_chunks]
+            zs_i = [z_chunk[i].cuda() for z_chunk in z_chunks]
             x_out = self._decode(zs_i, start_level=start_level, end_level=end_level)
-            x_outs.append(x_out)
-        return t.cat(x_outs, dim=0)
+            x_outs.append(x_out.cpu())
+        return t.cat(x_outs, dim=1)
 
     def _encode(self, x, start_level=0, end_level=None):
         # Encode
@@ -135,12 +138,17 @@ class VQVAE(nn.Module):
         return zs[start_level:end_level]
 
     def encode(self, x, start_level=0, end_level=None, bs_chunks=1):
-        x_chunks = t.chunk(x, bs_chunks, dim=0)
+        print(x.shape)
+        if bs_chunks == 1:
+            bs_chunks = x.shape[1] // (1024*128) + 1
+            print(f'changed bs_chunks from 1 to {bs_chunks} to prevent vram explosion')
+        x_chunks = t.chunk(x, bs_chunks, dim=1)
         zs_list = []
         for x_i in x_chunks:
-            zs_i = self._encode(x_i, start_level=start_level, end_level=end_level)
+            zs_i = self._encode(x_i.cuda(), start_level=start_level, end_level=end_level)
+            zs_i = [z_i.cpu() for z_i in zs_i]
             zs_list.append(zs_i)
-        zs = [t.cat(zs_level_list, dim=0) for zs_level_list in zip(*zs_list)]
+        zs = [t.cat(zs_level_list, dim=1) for zs_level_list in zip(*zs_list)]
         return zs
 
     def sample(self, n_samples):

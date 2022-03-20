@@ -177,7 +177,7 @@ def make_prior(hps, vqvae, device='cuda'):
     #    from jukebox.transformer.ops import _convert_conv_weights_to_fp16
     #    prior.apply(_convert_conv_weights_to_fp16)
     #prior = prior.to(device)
-    #restore_model(hps, prior, hps.restore_prior)
+    restore_model(hps, prior, hps.restore_prior)
     if hps.train:
         print_all(f"Loading prior in train mode")
         pass

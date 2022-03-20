@@ -13,6 +13,19 @@ from jukebox.utils.sample_utils import split_batch, get_starts
 from jukebox.utils.dist_utils import print_once
 import fire
 
+def ctqdm(lst):
+    import time
+    from datetime import timedelta
+    ln = len(lst)
+    old_time = time.time()
+    for k, item in enumerate(lst):
+        yield item
+        new_time = time.time()
+        tpi = new_time - old_time
+        tl = (ln - (k + 1)) * tpi
+        print(f'{k+1}/{ln} | {round(tpi,2)}s/it | time left: {timedelta(seconds=round(tl))}\n')
+        old_time = new_time
+
 def get_logdir(hps, level):
     if dist.get_world_size() > 1:
         logdir = f"{hps.name}_rank_{dist.get_rank()}/level_{level}"
@@ -49,7 +62,7 @@ def sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps):
     end = start + n_ctx
 
     # get z already sampled at current level
-    z = zs[level][:,start:end]
+    z = zs[level][:,start:end].to('cuda')
 
     if 'sample_tokens' in sampling_kwargs:
         # Support sampling a window shorter than n_ctx
@@ -66,9 +79,14 @@ def sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps):
     
     # get z_conds from level above
     z_conds = prior.get_z_conds(zs, start, end)
+    #print(z_conds)
+    if z_conds:
+        z_conds = [cond.cuda() for cond in z_conds]
+    #print(z_conds)
 
     # set y offset, sample_length and lyrics tokens
     y = prior.get_y(labels, start)
+    #print(y)
 
     empty_cache()
 
@@ -89,27 +107,33 @@ def sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps):
 
     # Update z with new sample
     z_new = z[:,-new_tokens:]
-    zs[level] = t.cat([zs[level], z_new], dim=1)
+    zs[level] = t.cat([zs[level], z_new.to('cpu')], dim=1)
     t.save(dict(zs=zs, labels=None, sampling_kwargs=None, x=None), f"{logdir}/data.pth.tar")
     print_once('progress saved')
     return zs
-
 # Sample total_length tokens at level=level with hop_length=hop_length
-def sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_length, hps):
+def sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_length, hps, logdir=''):
     print_once(f"Sampling level {level}")
+    cnt = 0
     if total_length >= prior.n_ctx:
-        for start in get_starts(total_length, prior.n_ctx, hop_length):
+        for start in ctqdm(get_starts(total_length, prior.n_ctx, hop_length)):
             zs = sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps)
+            if cnt % 10 == 0:
+                x = prior.decode(zs[level:], start_level=level)
+                save_wav(logdir, x, hps.sr)
+                del x
+                t.cuda.empty_cache()
+            cnt += 1
     else:
         zs = sample_partial_window(zs, labels, sampling_kwargs, level, prior, total_length, hps)
     return zs
 
 # Sample multiple levels
-def _sample(zs, labels, sampling_kwargs, priors, sample_levels, hps):
+def _sample(zs, labels, sampling_kwargs, priors, sample_levels, hps, device='cuda'):
     alignments = None
     for level in reversed(sample_levels):
         prior = priors[level]
-        #prior.cuda()
+        prior.c_to(device)
         empty_cache()
 
         # Set correct total_length, hop_length, labels and sampling_kwargs for level
@@ -117,15 +141,17 @@ def _sample(zs, labels, sampling_kwargs, priors, sample_levels, hps):
         total_length = hps.sample_length//prior.raw_to_tokens
         hop_length = int(hps.hop_fraction[level]*prior.n_ctx)
 
-        zs = sample_level(zs, labels[level], sampling_kwargs[level], level, prior, total_length, hop_length, hps)
+        logdir = get_logdir(hps, level)
 
-        #prior.cpu()
+        zs = sample_level(zs, labels[level], sampling_kwargs[level], level, prior, total_length, hop_length, hps, logdir)
+
         empty_cache()
 
         # Decode sample
         x = prior.decode(zs[level:], start_level=level, bs_chunks=zs[level].shape[0])
 
-        logdir = get_logdir(hps, level)
+        del prior
+
         t.save(dict(zs=zs, labels=labels, sampling_kwargs=sampling_kwargs, x=x), f"{logdir}/data.pth.tar")
         save_wav(logdir, x, hps.sr)
         #if alignments is None and priors[-1] is not None and priors[-1].n_tokens > 0 and not isinstance(priors[-1].labeller, EmptyLabeller):
@@ -170,7 +196,7 @@ def load_prompts(audio_files, duration, hps):
         xs.extend(xs)
     xs = xs[:hps.n_samples]
     x = t.stack([t.from_numpy(x) for x in xs])
-    x = x.to('cuda', non_blocking=True)
+    #x = x.to('cuda', non_blocking=True)
     return x
 
 # Load codes from previous sampling run
