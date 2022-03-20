@@ -144,7 +144,7 @@ class Transformer(nn.Module):
                 tot = t.cuda.get_device_properties(device).total_memory
                 alloc = t.cuda.memory_allocated(device)
                 free = tot - alloc
-                dev = device if free > 2_250_000_000 else 'cpu'
+                dev = device if free > 2_500_000_000 else 'cpu'
             else:
                 dev = device
             attn_b = attn_block(d).to(dev)
@@ -159,7 +159,7 @@ class Transformer(nn.Module):
                 tot = t.cuda.get_device_properties(device).total_memory
                 alloc = t.cuda.memory_allocated(device)
                 free = tot - alloc
-                dev = device if free > 2_250_000_000 else 'cpu'
+                dev = device if free > 2_500_000_000 else 'cpu'
             else:
                 dev = device
             attn_b = self._attn_mods[d].to(dev)
