@@ -4,6 +4,7 @@ Load from checkpoints
 Test on dummy outputs to see if everything matches
 """
 import os
+import glob
 import numpy as np
 import torch as t
 import jukebox.utils.dist_adapter as dist
@@ -21,6 +22,23 @@ MODELS = {
     #'your_model': ("you_vqvae_here", "your_upsampler_here", ..., "you_top_level_prior_here")
 }
 
+memory_map_idx = 0
+def memory_map(storage, location):
+    global memory_map_idx
+    memory_map_idx += 1
+    print(storage.size(), storage.element_size())
+    s = 'disk_tensors/' + str(memory_map_idx) + '.bint'
+    f = open(s,"wb")
+    f.seek(storage.size()*storage.element_size()-1)
+    f.write(b"\0")
+    f.close()
+    new_storage = storage.__class__.from_file(s, shared=1, size=storage.size())
+    del storage
+    return new_storage
+    #storage._new_using_filename()
+    #return storage
+    #return storage.__class__._new_shared_filename(storage, storage.size)
+
 def load_checkpoint(path):
     restore = path
     if restore.startswith(REMOTE_PREFIX):
@@ -34,7 +52,14 @@ def load_checkpoint(path):
                 download(remote_path, local_path)
         restore = local_path
     dist.barrier()
-    checkpoint = t.load(restore, map_location=t.device('cpu'))
+    if not os.path.exists('disk_tensors/'):
+        os.makedirs('disk_tensors/')
+    checkpoint = t.load(restore, map_location=memory_map)
+    files = glob.glob('disk_tensors/*.bint')
+    for file in files:
+        try:
+            os.remove(file)
+        except Exception: print('cant remove .bint file')
     print("Restored from {}".format(restore))
     return checkpoint
 
