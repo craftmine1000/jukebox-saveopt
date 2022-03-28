@@ -112,10 +112,10 @@ def sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_le
         speed_sampling = False
 
     cnt = 0
+    logdir = get_logdir(hps, level)
     if total_length >= prior.n_ctx:
         if speed_sampling:
             # do autosave manually
-            logdir = get_logdir(hps, level)
             try:
                 zs = t.load(f"{logdir}/data.pth.tar")['zs']
                 print_once('progress loaded')
