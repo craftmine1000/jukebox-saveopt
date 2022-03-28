@@ -8,6 +8,8 @@ from jukebox.transformer.ops import Conv1D, ACT_FNS, LayerNorm
 from jukebox.transformer.factored_attention import FactoredAttention
 from jukebox.utils.checkpoint import checkpoint
 
+free_memory_limit = 4_000_000_000
+
 def _convert_mlp_traced(l):
     if isinstance(l, ResAttnBlock):
         l.mlp = t.jit.trace(l.mlp, t.randn(1, 1, l.n_in).cuda())
@@ -144,7 +146,7 @@ class Transformer(nn.Module):
                 tot = t.cuda.get_device_properties(device).total_memory
                 alloc = t.cuda.memory_allocated(device)
                 free = tot - alloc
-                dev = device if free > 2_500_000_000 else 'cpu'
+                dev = device if free > free_memory_limit else 'cpu'
             else:
                 dev = device
             attn_b = attn_block(d).to(dev)
@@ -159,7 +161,7 @@ class Transformer(nn.Module):
                 tot = t.cuda.get_device_properties(device).total_memory
                 alloc = t.cuda.memory_allocated(device)
                 free = tot - alloc
-                dev = device if free > 2_500_000_000 else 'cpu'
+                dev = device if free > free_memory_limit else 'cpu'
             else:
                 dev = device
             attn_b = self._attn_mods[d].to(dev)
