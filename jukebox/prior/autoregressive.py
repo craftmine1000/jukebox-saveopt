@@ -203,7 +203,7 @@ class ConditionalAutoregressive2D(nn.Module):
         return x, cond
 
     def sample(self, n_samples, x_cond=None, y_cond=None, encoder_kv=None, fp16=False, temp=1.0, top_k=0, top_p=0.0,
-               get_preds=False, sample_tokens=None):
+               get_preds=False, sample_tokens=None, combined_progress=False):
         assert self.training == False
 
         if sample_tokens is None: sample_tokens=self.input_dims
@@ -225,7 +225,7 @@ class ConditionalAutoregressive2D(nn.Module):
             xs, x = [], None
             if get_preds:
                 preds = []
-            for sample_t in get_range(range(0, sample_tokens)):
+            for sample_t in get_range(range(0, sample_tokens), combined_progress=combined_progress):
                 x, cond = self.get_emb(sample_t, n_samples, x, x_cond, y_cond)
                 self.transformer.check_cache(n_samples, sample_t, fp16)
                 x = self.transformer(x, encoder_kv=encoder_kv, sample=True, fp16=fp16) # Transformer
@@ -255,7 +255,7 @@ class ConditionalAutoregressive2D(nn.Module):
             return x
 
     def primed_sample(self, n_samples, x, x_cond=None, y_cond=None, encoder_kv=None, fp16=False, temp=1.0, top_k=0,
-                      top_p=0.0, get_preds=False, chunk_size=None, sample_tokens=None):
+                      top_p=0.0, get_preds=False, chunk_size=None, sample_tokens=None, combined_progress=False):
         assert self.training == False
 
         if sample_tokens is None: sample_tokens=self.input_dims
@@ -296,7 +296,7 @@ class ConditionalAutoregressive2D(nn.Module):
             x_primes = []
             start = 0
             x = None
-            for current_chunk_size in get_range(chunk_sizes):
+            for current_chunk_size in get_range(chunk_sizes, combined_progress=True):
                 xs_prime, conds_prime = [], []
                 for sample_t in range(start, start + current_chunk_size):
                     x_prime, cond_prime = self.get_emb(sample_t, n_samples, x, x_cond, y_cond)

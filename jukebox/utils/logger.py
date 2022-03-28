@@ -5,12 +5,49 @@ from datetime import date
 import os
 import sys
 
-def def_tqdm(x):
-    return tqdm(x, leave=True, file=sys.stdout, bar_format="{n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]")
+bar_format = "{n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]"
 
-def get_range(x):
+def ctqdm(lst, mult=False):
+    import time
+    from datetime import timedelta
+    if not mult:
+        mult = 1
+    ln = len(lst)
+    start = time.time()
+    old_time = start
+    for k, item in enumerate(lst):
+        yield item
+        new_time = time.time()
+        tpi = new_time - old_time
+        tfs = new_time - start
+        tl = (ln - (k + 1)) * tpi
+        if tpi < 1 and tpi != 0:
+            fmt = 'it/s'
+            tpi = (1/tpi) * mult
+        else:
+            fmt = 's/it'
+            tpi *= mult
+        print(bar_format.format(
+                n_fmt=(k+1)*mult,
+                total_fmt=ln*mult,
+                elapsed=timedelta(seconds=round(tfs)),
+                remaining=timedelta(seconds=round(tl)),
+                rate_fmt=round(tpi, 2),
+                postfix=fmt
+            ) + '    ', end='\r'
+        )
+        old_time = new_time
+    print()
+
+def def_tqdm(x, combined_progress=False):
+    if combined_progress:
+        return ctqdm(x, mult=combined_progress)
+    else:
+        return tqdm(x, leave=True, file=sys.stdout, bar_format=bar_format)
+
+def get_range(x, combined_progress=False):
     if dist.get_rank() == 0:
-        return def_tqdm(x)
+        return def_tqdm(x, combined_progress=combined_progress)
     else:
         return x
 

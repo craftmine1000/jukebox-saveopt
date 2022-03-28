@@ -248,7 +248,7 @@ class SimplePrior(nn.Module):
         return x_cond, y_cond, prime
 
     def sample(self, n_samples, z=None, z_conds=None, y=None, fp16=False, temp=1.0, top_k=0, top_p=0.0,
-               chunk_size=None, sample_tokens=None):
+               chunk_size=None, sample_tokens=None, combined_progress=False):
         N = n_samples
         if z is not None: assert z.shape[0] == N, f"Expected shape ({N},**), got shape {z.shape}"
         if y is not None: assert y.shape[0] == N, f"Expected shape ({N},**), got shape {y.shape}"
@@ -273,16 +273,16 @@ class SimplePrior(nn.Module):
                 if sample_tokens is not None:
                     sample_tokens += self.n_tokens
                 z = self.prior.primed_sample(n_samples, z, x_cond, y_cond, fp16=fp16, temp=temp,
-                                             top_k=top_k, top_p=top_p, chunk_size=chunk_size, sample_tokens=sample_tokens)
+                                             top_k=top_k, top_p=top_p, chunk_size=chunk_size, sample_tokens=sample_tokens, combined_progress=combined_progress)
                 z = self.prior_postprocess(z)
             else:
                 encoder_kv = self.get_encoder_kv(prime, fp16=fp16, sample=True)
                 if no_past_context:
                     z = self.prior.sample(n_samples, x_cond, y_cond, encoder_kv, fp16=fp16, temp=temp, top_k=top_k,
-                                          top_p=top_p, sample_tokens=sample_tokens)
+                                          top_p=top_p, sample_tokens=sample_tokens, combined_progress=combined_progress)
                 else:
                     z = self.prior.primed_sample(n_samples, z, x_cond, y_cond, encoder_kv, fp16=fp16, temp=temp,
-                                             top_k=top_k, top_p=top_p, chunk_size=chunk_size, sample_tokens=sample_tokens)
+                                             top_k=top_k, top_p=top_p, chunk_size=chunk_size, sample_tokens=sample_tokens, combined_progress=combined_progress)
             if sample_tokens is None:
                 assert_shape(z, (N, *self.z_shape))
         return z

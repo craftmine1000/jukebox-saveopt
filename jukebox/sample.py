@@ -1,5 +1,6 @@
 import os
 import torch as t
+import torch.nn.functional as F
 import jukebox.utils.dist_adapter as dist
 
 from jukebox.hparams import Hyperparams
@@ -11,20 +12,8 @@ from jukebox.align import get_alignment
 from jukebox.save_html import save_html
 from jukebox.utils.sample_utils import split_batch, get_starts
 from jukebox.utils.dist_utils import print_once
+from jukebox.utils.logger import ctqdm
 import fire
-
-def ctqdm(lst):
-    import time
-    from datetime import timedelta
-    ln = len(lst)
-    old_time = time.time()
-    for k, item in enumerate(lst):
-        yield item
-        new_time = time.time()
-        tpi = new_time - old_time
-        tl = (ln - (k + 1)) * tpi
-        print(f'{k+1}/{ln} | {round(tpi,2)}s/it | time left: {timedelta(seconds=round(tl))}\n')
-        old_time = new_time
 
 def get_logdir(hps, level):
     if dist.get_world_size() > 1:
@@ -36,7 +25,7 @@ def get_logdir(hps, level):
     return logdir
 
 # Sample a partial window of length<n_ctx with tokens_to_sample new tokens on level=level
-def sample_partial_window(zs, labels, sampling_kwargs, level, prior, tokens_to_sample, hps):
+def sample_partial_window(zs, labels, sampling_kwargs, level, prior, tokens_to_sample, hps, combined_progress=False, autosave=True):
     z = zs[level]
     n_ctx = prior.n_ctx
     current_tokens = z.shape[1]
@@ -47,15 +36,16 @@ def sample_partial_window(zs, labels, sampling_kwargs, level, prior, tokens_to_s
         sampling_kwargs['sample_tokens'] = n_ctx
         start = current_tokens - n_ctx + tokens_to_sample
 
-    return sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps)
+    return sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps, combined_progress=combined_progress, autosave=autosave)
 
 # Sample a single window of length=n_ctx at position=start on level=level
-def sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps):
+def sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps, combined_progress=False, autosave=True):
     logdir = get_logdir(hps, level)
-    try:
-        zs = t.load(f"{logdir}/data.pth.tar")['zs']
-        print_once('progress loaded')
-    except Exception: pass
+    if autosave:
+        try:
+            zs = t.load(f"{logdir}/data.pth.tar")['zs']
+            print_once('progress loaded')
+        except Exception: pass
     
     n_samples = hps.n_samples
     n_ctx = prior.n_ctx
@@ -76,7 +66,7 @@ def sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps):
     if new_tokens <= 0:
         # Nothing new to sample
         return zs
-    
+
     # get z_conds from level above
     z_conds = prior.get_z_conds(zs, start, end)
     #print(z_conds)
@@ -93,13 +83,12 @@ def sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps):
     max_batch_size = sampling_kwargs['max_batch_size']
     del sampling_kwargs['max_batch_size']
 
-
     z_list = split_batch(z, n_samples, max_batch_size)
     z_conds_list = split_batch(z_conds, n_samples, max_batch_size)
     y_list = split_batch(y, n_samples, max_batch_size)
     z_samples = []
     for z_i, z_conds_i, y_i in zip(z_list, z_conds_list, y_list):
-        z_samples_i = prior.sample(n_samples=z_i.shape[0], z=z_i, z_conds=z_conds_i, y=y_i, **sampling_kwargs)
+        z_samples_i = prior.sample(n_samples=z_i.shape[0], z=z_i, z_conds=z_conds_i, y=y_i, combined_progress=combined_progress, **sampling_kwargs)
         z_samples.append(z_samples_i.to('cpu'))
     z = t.cat(z_samples, dim=0)
 
@@ -108,22 +97,100 @@ def sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps):
     # Update z with new sample
     z_new = z[:,-new_tokens:]
     zs[level] = t.cat([zs[level], z_new], dim=1)
-    t.save(dict(zs=zs, labels=None, sampling_kwargs=None, x=None), f"{logdir}/data.pth.tar")
-    print_once('progress saved')
+    if autosave:
+        t.save(dict(zs=zs, labels=None, sampling_kwargs=None, x=None), f"{logdir}/data.pth.tar")
+        print_once('progress saved')
     return zs
 # Sample total_length tokens at level=level with hop_length=hop_length
-def sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_length, hps, logdir=''):
-    print_once(f"Sampling level {level}")
+def sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_length, hps):
+    
+    if level != hps.levels - 1 and isinstance(hps.hop_fraction[level], int) and hps.hop_fraction[level] >= 1:
+        print_once(f"Speed-sampling level {level}")
+        speed_sampling = True
+    else:
+        print_once(f"Sampling level {level}")
+        speed_sampling = False
+
     cnt = 0
     if total_length >= prior.n_ctx:
-        for start in ctqdm(get_starts(total_length, prior.n_ctx, hop_length)):
-            zs = sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps)
-            if cnt % 10 == 0:
-                x = prior.decode(zs[level:], start_level=level)
-                save_wav(logdir, x, hps.sr)
-                del x
-                t.cuda.empty_cache()
-            cnt += 1
+        if speed_sampling:
+            # do autosave manually
+            logdir = get_logdir(hps, level)
+            try:
+                zs = t.load(f"{logdir}/data.pth.tar")['zs']
+                print_once('progress loaded')
+            except Exception: pass
+
+            assert prior.n_ctx % hps.hop_fraction[level] == 0, 'context length needs to be divisible by hop_fraction'
+            
+            speed_hop_length = hop_length // hps.hop_fraction[level]
+
+            cut_size = speed_hop_length * sampling_kwargs['max_batch_size']
+
+            for start in ctqdm(range(zs[level].shape[1], total_length, cut_size)):
+                print()
+                end = start + cut_size
+                
+                zz = [t.zeros(0,0, dtype=t.long) for _ in range(hps.levels)]
+
+                zz[level + 1] = zs[level + 1][:,start//prior.cond_downsample:end//prior.cond_downsample]
+                
+                chunks_got = ((zz[level + 1].shape[1] - 1) // (speed_hop_length // prior.cond_downsample)) + 1
+
+                zz[level + 1] = F.pad(zz[level + 1], (0, chunks_got * (speed_hop_length // prior.cond_downsample) - zz[level + 1].shape[1]), 'constant', 0)
+                zz[level + 1] = t.cat(t.chunk(zz[level + 1], chunks=chunks_got, dim=1), dim=0)
+                zz[level + 1] = F.pad(zz[level + 1], (0, prior.n_ctx//prior.cond_downsample - zz[level + 1].shape[1]), 'constant', 0)
+
+                zz[level] = t.zeros(zz[level + 1].shape[0], 0, dtype=t.long)
+                
+                new_labels = dict()
+                new_labels['y'] = labels['y'].repeat(chunks_got, 1)
+                new_labels['info'] = []
+                for i in range(chunks_got):
+                    new_labels['info'].extend(labels['info'])
+                #print(new_labels)
+                
+                print(f'Speed sampling {speed_hop_length}x{chunks_got}={speed_hop_length * chunks_got} tokens...')
+
+                # these are equivalent
+
+                #less ez way
+                sampling_kwargs['sample_tokens'] = speed_hop_length
+                zz = sample_single_window(zz, new_labels, sampling_kwargs, level, prior, 0, hps, combined_progress=chunks_got, autosave=False)
+                
+                #ez way
+                #zz = sample_partial_window(zz, new_labels, sampling_kwargs, level, prior, speed_hop_length, hps, combined_progress=chunks_got, autosave=False)
+                
+                zz[level] = t.cat(t.chunk(zz[level], chunks=chunks_got, dim=0), dim=1)
+                zs[level] = t.cat([zs[level], zz[level]], dim=1)
+
+                # do autosave manually
+                t.save(dict(zs=zs, labels=None, sampling_kwargs=None, x=None), f"{logdir}/data.pth.tar")
+                print_once('progress saved')
+
+                if cnt % 10 == 0:
+                    x = prior.decode(zs[level:], start_level=level, bs_chunks=zs[level].shape[0])
+                    save_wav(logdir, x, hps.sr)
+                    print('WAV written to disk')
+                    del x
+                    t.cuda.empty_cache()
+                cnt += 1
+                print()
+        else:
+            for start in ctqdm(get_starts(total_length, prior.n_ctx, hop_length)):
+                print()
+                
+                zs = sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps)
+                
+                if cnt % 10 == 0:
+                    print()
+                    x = prior.decode(zs[level:], start_level=level, bs_chunks=zs[level].shape[0])
+                    save_wav(logdir, x, hps.sr)
+                    print('WAV written to disk')
+                    del x
+                    t.cuda.empty_cache()
+                cnt += 1
+                print()
     else:
         zs = sample_partial_window(zs, labels, sampling_kwargs, level, prior, total_length, hps)
     return zs
@@ -139,18 +206,21 @@ def _sample(zs, labels, sampling_kwargs, priors, sample_levels, hps, device='cud
         # Set correct total_length, hop_length, labels and sampling_kwargs for level
         assert hps.sample_length % prior.raw_to_tokens == 0, f"Expected sample_length {hps.sample_length} to be multiple of {prior.raw_to_tokens}"
         total_length = hps.sample_length//prior.raw_to_tokens
-        hop_length = int(hps.hop_fraction[level]*prior.n_ctx)
+        if level != hps.levels - 1 and isinstance(hps.hop_fraction[level], int) and hps.hop_fraction[level] >= 1:
+            hop_length = prior.n_ctx
+        else:
+            hop_length = int(hps.hop_fraction[level]*prior.n_ctx)
 
         logdir = get_logdir(hps, level)
 
-        zs = sample_level(zs, labels[level], sampling_kwargs[level], level, prior, total_length, hop_length, hps, logdir)
+        zs = sample_level(zs, labels[level], sampling_kwargs[level], level, prior, total_length, hop_length, hps)
 
         empty_cache()
-
         # Decode sample
         x = prior.decode(zs[level:], start_level=level, bs_chunks=zs[level].shape[0])
 
         del prior
+        empty_cache()
 
         t.save(dict(zs=zs, labels=labels, sampling_kwargs=sampling_kwargs, x=x), f"{logdir}/data.pth.tar")
         save_wav(logdir, x, hps.sr)
