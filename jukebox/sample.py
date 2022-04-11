@@ -163,6 +163,7 @@ def sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_le
                 
                 zz[level] = t.cat(t.chunk(zz[level], chunks=chunks_got, dim=0), dim=1)
                 zs[level] = t.cat([zs[level], zz[level]], dim=1)
+                zs[level] = zs[level][:, :hps.sample_length // prior.raw_to_tokens]
 
                 # do autosave manually
                 t.save(dict(zs=zs, labels=None, sampling_kwargs=None, x=None), f"{logdir}/data.pth.tar")
