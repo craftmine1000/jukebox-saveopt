@@ -33,7 +33,7 @@ hps.name = 'samples'
 chunk_size = 16 if model=="5b_lyrics" else 32
 max_batch_size = hps.n_samples#1 if model=="5b_lyrics" else 8
 hps.levels = 3
-hps.hop_fraction = [1,1,.125]
+hps.hop_fraction = [1,4,.125]
 
 # Specify an audio file here.
 audio_file = 'samples/primer.wav'
