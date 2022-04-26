@@ -32,7 +32,7 @@ def memory_map(storage, location):
     f.seek(storage.size()*storage.element_size()-1)
     f.write(b"\0")
     f.close()
-    new_storage = storage.__class__.from_file(s, shared=1, size=storage.size())
+    new_storage = storage.__class__.from_file(s, 1, storage.size())
     del storage
     return new_storage
 
