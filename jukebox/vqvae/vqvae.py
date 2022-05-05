@@ -112,17 +112,24 @@ class VQVAE(nn.Module):
         x_out = self.postprocess(x_out)
         return x_out
 
-    def decode(self, zs, start_level=0, end_level=None, bs_chunks=1):
-        if bs_chunks == 1:
-            bs_chunks = (zs[-1].shape[1] - 1) // 1024 + 1
-            print(f'changed bs_chunks from 1 to {bs_chunks} to prevent vram explosion')
-        z_chunks = [t.chunk(z, bs_chunks, dim=1) for z in zs]
+    def decode(self, zs, start_level=0, end_level=None, bs_chunks=None, length_chunks=None):
+        if bs_chunks is None:
+            bs_chunks = zs[-1].shape[0]
+        if length_chunks is None:
+            length_chunks = (zs[-1].shape[1] - 1) // 1024 + 1
+        
+        z_chunks = [t.chunk(z, bs_chunks, dim=0) for z in zs]
         x_outs = []
         for i in range(bs_chunks):
-            zs_i = [z_chunk[i].cuda() for z_chunk in z_chunks]
-            x_out = self._decode(zs_i, start_level=start_level, end_level=end_level)
-            x_outs.append(x_out.cpu())
-        return t.cat(x_outs, dim=1)
+            zs_i = [z_chunk[i] for z_chunk in z_chunks]
+            zi_chunks = [t.chunk(z, length_chunks, dim=1) for z in zs_i]
+            xi_outs = []
+            for i2 in range(length_chunks):
+                zs_i = [z_chunk[i2].cuda() for z_chunk in zi_chunks]
+                xi_out = self._decode(zs_i, start_level=start_level, end_level=end_level)
+                xi_outs.append(xi_out.cpu())
+            x_outs.append(t.cat(xi_outs, dim=1))
+        return t.cat(x_outs, dim=0)
 
     def _encode(self, x, start_level=0, end_level=None):
         # Encode
@@ -137,18 +144,23 @@ class VQVAE(nn.Module):
         zs = self.bottleneck.encode(xs)
         return zs[start_level:end_level]
 
-    def encode(self, x, start_level=0, end_level=None, bs_chunks=1):
-        print(x.shape)
-        if bs_chunks == 1:
-            bs_chunks = (x.shape[1] - 1) // (1024*128) + 1
-            print(f'changed bs_chunks from 1 to {bs_chunks} to prevent vram explosion')
-        x_chunks = t.chunk(x, bs_chunks, dim=1)
+    def encode(self, x, start_level=0, end_level=None, bs_chunks=None, length_chunks=None):
+        if bs_chunks is None:
+            bs_chunks = x.shape[0] # safe default?
+        if length_chunks is None:
+            length_chunks = (x.shape[1] - 1) // (1024*128) + 1
+        
+        x_chunks = t.chunk(x, bs_chunks, dim=0)
         zs_list = []
         for x_i in x_chunks:
-            zs_i = self._encode(x_i.cuda(), start_level=start_level, end_level=end_level)
-            zs_i = [z_i.cpu() for z_i in zs_i]
-            zs_list.append(zs_i)
-        zs = [t.cat(zs_level_list, dim=1) for zs_level_list in zip(*zs_list)]
+            xi_chunks = t.chunk(x_i, length_chunks, dim=1)
+            zsi_list = []
+            for x_i2 in xi_chunks:
+                zs_i2 = self._encode(x_i2, start_level=start_level, end_level=end_level)
+                zs_i2 = [z_i.cpu() for z_i in zs_i2]
+                zsi_list.append(zs_i2)
+            zs_list.append(t.cat(zsi_list, dim=1))
+        zs = [t.cat(zs_level_list, dim=0) for zs_level_list in zip(*zs_list)]
         return zs
 
     def sample(self, n_samples):
