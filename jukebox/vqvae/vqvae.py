@@ -159,7 +159,7 @@ class VQVAE(nn.Module):
                 zs_i2 = self._encode(x_i2.cuda(), start_level=start_level, end_level=end_level)
                 zs_i2 = [z_i.cpu() for z_i in zs_i2]
                 zsi_list.append(zs_i2)
-            zs_list.append(t.cat(zsi_list, dim=1))
+            zs_list.append([t.cat(zs_level_list, dim=1) for zs_level_list in zip(*zsi_list)])
         zs = [t.cat(zs_level_list, dim=0) for zs_level_list in zip(*zs_list)]
         return zs
 
