@@ -27,14 +27,14 @@ def ctqdm(lst, mult=False):
         else:
             fmt = 's/it'
             tpi *= mult
-        print(bar_format.format(
+        print('\r' + bar_format.format(
                 n_fmt=(k+1)*mult,
                 total_fmt=ln*mult,
                 elapsed=timedelta(seconds=round(tfs)),
                 remaining=timedelta(seconds=round(tl)),
                 rate_fmt=round(tpi, 2),
                 postfix=fmt
-            ) + '    ', end='\r'
+            ) + '    ', end=''
         )
         old_time = new_time
     print()
