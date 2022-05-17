@@ -148,12 +148,12 @@ class VQVAE(nn.Module):
         if bs_chunks is None:
             bs_chunks = x.shape[0] # safe default?
         if length_chunks is None:
-            length_chunks = (x.shape[1] - 1) // (1024*128) + 1
+            length_chunks = 1024 * 128
         
         x_chunks = t.chunk(x, bs_chunks, dim=0)
         zs_list = []
         for x_i in x_chunks:
-            xi_chunks = t.chunk(x_i, length_chunks, dim=1)
+            xi_chunks = t.split(x_i, length_chunks, dim=1)
             zsi_list = []
             for x_i2 in xi_chunks:
                 zs_i2 = self._encode(x_i2.cuda(), start_level=start_level, end_level=end_level)
