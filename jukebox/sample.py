@@ -211,7 +211,7 @@ def _sample(zs, labels, sampling_kwargs, priors, sample_levels, hps, device='cud
             hop_length = prior.n_ctx
         else:
             hop_length = int(hps.hop_fraction[level]*prior.n_ctx)
-            remainder = hoplength % prior.cond_downsample
+            remainder = hop_length % prior.cond_downsample
             if remainder != 0:
                 hop_length += prior.cond_downsample - remainder
 
