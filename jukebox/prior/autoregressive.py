@@ -203,7 +203,7 @@ class ConditionalAutoregressive2D(nn.Module):
         return x, cond
 
     def sample(self, n_samples, x_cond=None, y_cond=None, encoder_kv=None, fp16=False, temp=1.0, top_k=0, top_p=0.0,
-               get_preds=False, sample_tokens=None, combined_progress=False):
+               get_preds=False, sample_tokens=None, combined_progress=False, prob_func=None):
         assert self.training == False
 
         if sample_tokens is None: sample_tokens=self.input_dims
@@ -238,7 +238,7 @@ class ConditionalAutoregressive2D(nn.Module):
                 # Adjust logits
                 x = x / temp
                 x = filter_logits(x, top_k=top_k, top_p=top_p)
-                x = t.distributions.Categorical(logits=x).sample() # Sample and replace x
+                x = select_token(x, prob_func)
                 assert x.shape == (n_samples, 1)
                 xs.append(x.clone())
 
@@ -255,7 +255,7 @@ class ConditionalAutoregressive2D(nn.Module):
             return x
 
     def primed_sample(self, n_samples, x, x_cond=None, y_cond=None, encoder_kv=None, fp16=False, temp=1.0, top_k=0,
-                      top_p=0.0, get_preds=False, chunk_size=None, sample_tokens=None, combined_progress=False):
+                      top_p=0.0, get_preds=False, chunk_size=None, sample_tokens=None, combined_progress=False, prob_func=None):
         assert self.training == False
 
         if sample_tokens is None: sample_tokens=self.input_dims
@@ -348,7 +348,7 @@ class ConditionalAutoregressive2D(nn.Module):
                 # Adjust logits
                 x = x / temp
                 x = filter_logits(x, top_k=top_k, top_p=top_p)
-                x = t.distributions.Categorical(logits=x).sample() # Sample and replace x
+                x = select_token(x, prob_func)
                 assert x.shape == (n_samples, 1)
                 xs.append(x.clone())
 
@@ -425,3 +425,8 @@ if __name__ == '__main__':
     ]
     for test_case in test_cases:
         test_prior(*test_case)
+
+def select_token(x, func):
+    if func != None:
+        x = func(x)
+    return t.distributions.Categorical(logits=x).sample() # Sample and replace x

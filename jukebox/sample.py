@@ -25,7 +25,7 @@ def get_logdir(hps, level):
     return logdir
 
 # Sample a partial window of length<n_ctx with tokens_to_sample new tokens on level=level
-def sample_partial_window(zs, labels, sampling_kwargs, level, prior, tokens_to_sample, hps, combined_progress=False, autosave=True):
+def sample_partial_window(zs, labels, sampling_kwargs, level, prior, tokens_to_sample, hps, combined_progress=False, autosave=True, prob_func=None):
     z = zs[level]
     n_ctx = prior.n_ctx
     current_tokens = z.shape[1]
@@ -36,10 +36,10 @@ def sample_partial_window(zs, labels, sampling_kwargs, level, prior, tokens_to_s
         sampling_kwargs['sample_tokens'] = n_ctx
         start = current_tokens - n_ctx + tokens_to_sample
 
-    return sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps, combined_progress=combined_progress, autosave=autosave)
+    return sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps, combined_progress=combined_progress, autosave=autosave, prob_func=prob_func)
 
 # Sample a single window of length=n_ctx at position=start on level=level
-def sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps, combined_progress=False, autosave=True):
+def sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps, combined_progress=False, autosave=True, prob_func=None):
     logdir = get_logdir(hps, level)
     if autosave:
         try:
@@ -88,7 +88,7 @@ def sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps, 
     y_list = split_batch(y, n_samples, max_batch_size)
     z_samples = []
     for z_i, z_conds_i, y_i in zip(z_list, z_conds_list, y_list):
-        z_samples_i = prior.sample(n_samples=z_i.shape[0], z=z_i, z_conds=z_conds_i, y=y_i, combined_progress=combined_progress, **sampling_kwargs)
+        z_samples_i = prior.sample(n_samples=z_i.shape[0], z=z_i, z_conds=z_conds_i, y=y_i, combined_progress=combined_progress, prob_func=prob_func, **sampling_kwargs)
         z_samples.append(z_samples_i.to('cpu'))
     z = t.cat(z_samples, dim=0)
 
@@ -102,7 +102,7 @@ def sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps, 
         print_once('progress saved')
     return zs
 # Sample total_length tokens at level=level with hop_length=hop_length
-def sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_length, hps):
+def sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_length, hps, prob_func=None):
     
     if level != hps.levels - 1 and isinstance(hps.hop_fraction[level], int) and hps.hop_fraction[level] >= 1:
         print_once(f"Speed-sampling level {level}")
@@ -156,7 +156,7 @@ def sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_le
 
                 #less ez way
                 sampling_kwargs['sample_tokens'] = speed_hop_length
-                zz = sample_single_window(zz, new_labels, sampling_kwargs, level, prior, 0, hps, combined_progress=chunks_got, autosave=False)
+                zz = sample_single_window(zz, new_labels, sampling_kwargs, level, prior, 0, hps, combined_progress=chunks_got, autosave=False, prob_func=prob_func)
                 
                 #ez way
                 #zz = sample_partial_window(zz, new_labels, sampling_kwargs, level, prior, speed_hop_length, hps, combined_progress=chunks_got, autosave=False)
@@ -181,7 +181,7 @@ def sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_le
             for start in ctqdm(get_starts(total_length, prior.n_ctx, hop_length)):
                 print()
                 
-                zs = sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps)
+                zs = sample_single_window(zs, labels, sampling_kwargs, level, prior, start, hps, prob_func=prob_func)
                 
                 if cnt % 10 == 0:
                     print()
@@ -193,7 +193,7 @@ def sample_level(zs, labels, sampling_kwargs, level, prior, total_length, hop_le
                 cnt += 1
                 print()
     else:
-        zs = sample_partial_window(zs, labels, sampling_kwargs, level, prior, total_length, hps)
+        zs = sample_partial_window(zs, labels, sampling_kwargs, level, prior, total_length, hps, prob_func=prob_func)
     return zs
 
 # Sample multiple levels
@@ -211,8 +211,10 @@ def _sample(zs, labels, sampling_kwargs, priors, sample_levels, hps, device='cud
             hop_length = prior.n_ctx
         else:
             hop_length = int(hps.hop_fraction[level]*prior.n_ctx)
+            print(hop_length)
             if prior.cond_downsample != None:
                 remainder = hop_length % prior.cond_downsample
+                print(remainder, hop_length, prior.cond_downsample)
                 if remainder != 0:
                     hop_length += prior.cond_downsample - remainder
 
